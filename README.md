@@ -27,7 +27,7 @@ $env:CGO_ENABLED="0"; $env:GOOS="windows"; $env:GOARCH="amd64"
 go build -o "DDScreenGO_windows.exe" ./cmd/server/
 
 $env:CGO_ENABLED="0"; $env:GOOS="linux"; $env:GOARCH="amd64"
-go build -o "DDScreenGO_linux.exe" ./cmd/server/
+go build -o "DDScreenGO_linux" ./cmd/server/
 ```
 
 启动后访问 API 测试与调试页：
