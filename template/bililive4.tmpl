@@ -163,13 +163,14 @@
         .stats-row {
             display: flex;
             align-items: center;
-            gap: 20px;
+            gap: 16px;
             background: rgba(0,0,0,0.4);
-            padding: 14px 20px;
+            padding: 12px 18px;
             border-radius: 12px;
             border: 1px solid rgba(255,255,255,0.05);
             margin-top: 15px;
             flex-wrap: nowrap;
+            min-width: 0;
             {{- if eq .Options.View 1}}
             justify-content: center;
             {{- end}}
@@ -177,28 +178,29 @@
         .stat-item {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 5px;
             color: #ddd;
-            font-size: 15px;
+            font-size: 12px;
             white-space: nowrap;
             flex-shrink: 0;
         }
         .stat-item span {
             color: var(--primary);
             font-weight: bold;
-            font-size: 16px;
+            font-size: 13px;
             white-space: nowrap;
         }
         {{- if eq .Options.View 1}}
         .stats-row {
             justify-content: center;
-            padding: 12px 16px;
+            padding: 10px 14px;
         }
         .stat-item {
-            font-size: 13px;
+            font-size: 11px;
+            gap: 4px;
         }
         .stat-item span {
-            font-size: 14px;
+            font-size: 12px;
         }
         {{- end}}
         .qr-section {
