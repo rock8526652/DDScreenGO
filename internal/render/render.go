@@ -2149,14 +2149,13 @@ func fetchAndParseOpus(id string, res *BiliDynamicSimple) {
 		return
 	}
 	htmlStr := string(body)
-	re := regexp.MustCompile(`window\.__INITIAL_STATE__\s*=\s*(\{.*?\});`)
-	matches := re.FindStringSubmatch(htmlStr)
-	if len(matches) < 2 {
+	jsonStr := extractInitialStateJSON(htmlStr)
+	if jsonStr == "" {
 		return
 	}
 
 	var data map[string]any
-	if err := json.Unmarshal([]byte(matches[1]), &data); err != nil {
+	if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
 		return
 	}
 
@@ -2476,6 +2475,71 @@ func parseBiliDynamicItem(item map[string]any) *BiliDynamicSimple {
 }
 
 // fetchOpusTitleAndDesc fetches the opus page HTML and extracts title + text content
+// descHasContent checks whether a module_dynamic.desc map contains meaningful text content.
+func descHasContent(v any) bool {
+	d, ok := v.(map[string]any)
+	if !ok || d == nil {
+		return false
+	}
+	if t := util.S(d["text"]); t != "" {
+		return true
+	}
+	if nodes := util.A(d["rich_text_nodes"]); len(nodes) > 0 {
+		return true
+	}
+	return false
+}
+
+// extractInitialStateJSON extracts the JSON object assigned to window.__INITIAL_STATE__
+// from HTML source. Uses brace counting instead of regex to correctly handle nested JSON.
+func extractInitialStateJSON(html string) string {
+	marker := "window.__INITIAL_STATE__"
+	idx := strings.Index(html, marker)
+	if idx < 0 {
+		return ""
+	}
+	rest := html[idx+len(marker):]
+	// Skip optional whitespace and '='
+	rest = strings.TrimLeft(rest, " \t\r\n")
+	if !strings.HasPrefix(rest, "=") {
+		return ""
+	}
+	rest = strings.TrimLeft(rest[1:], " \t\r\n")
+	if !strings.HasPrefix(rest, "{") {
+		return ""
+	}
+	depth := 0
+	inStr := false
+	escape := false
+	for i := 0; i < len(rest); i++ {
+		c := rest[i]
+		if escape {
+			escape = false
+			continue
+		}
+		if c == '\\' && inStr {
+			escape = true
+			continue
+		}
+		if c == '"' {
+			inStr = !inStr
+			continue
+		}
+		if inStr {
+			continue
+		}
+		if c == '{' {
+			depth++
+		} else if c == '}' {
+			depth--
+			if depth == 0 {
+				return rest[:i+1]
+			}
+		}
+	}
+	return ""
+}
+
 // from __INITIAL_STATE__. Used as fallback when dynamic API returns desc=null for opus dynamics.
 func fetchOpusTitleAndDesc(id string) (title string, desc map[string]any) {
 	req, err := http.NewRequest("GET", "https://www.bilibili.com/opus/"+id, nil)
@@ -2492,13 +2556,12 @@ func fetchOpusTitleAndDesc(id string) (title string, desc map[string]any) {
 	if err != nil {
 		return
 	}
-	re := regexp.MustCompile(`window\.__INITIAL_STATE__\s*=\s*(\{.*?\});`)
-	matches := re.FindStringSubmatch(string(body))
-	if len(matches) < 2 {
+	jsonStr := extractInitialStateJSON(string(body))
+	if jsonStr == "" {
 		return
 	}
 	var data map[string]any
-	if err := json.Unmarshal([]byte(matches[1]), &data); err != nil {
+	if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
 		return
 	}
 	detail := util.M(data["detail"])
@@ -2633,7 +2696,7 @@ func (r *Renderer) SaveBiliDynamic1(ctx context.Context, rawURL string, expand b
 		if item, ok := d["item"].(map[string]any); ok {
 			if modules, ok := item["modules"].(map[string]any); ok {
 				if md, ok := modules["module_dynamic"].(map[string]any); ok {
-					if md["desc"] == nil {
+					if !descHasContent(md["desc"]) {
 						util.Log("DBG", "Dynamic1", "desc为空，尝试从opus页面获取标题和文本")
 						title, desc := fetchOpusTitleAndDesc(id)
 						if title != "" || desc != nil {
@@ -2672,7 +2735,7 @@ func (r *Renderer) SaveBiliDynamic1(ctx context.Context, rawURL string, expand b
 				}
 				if origModules, ok := orig["modules"].(map[string]any); ok {
 					if origMd, ok := origModules["module_dynamic"].(map[string]any); ok {
-						if origMd["desc"] == nil && origID != "" {
+						if !descHasContent(origMd["desc"]) && origID != "" {
 							util.Log("DBG", "Dynamic1", "转发原动态desc为空，尝试从opus页面获取 (orig_id=%s)", origID)
 							origTitle, origDesc := fetchOpusTitleAndDesc(origID)
 							if origTitle != "" || origDesc != nil {

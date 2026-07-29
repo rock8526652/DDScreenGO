@@ -3,7 +3,7 @@
 这是把原 `DD_Screen` C# ASP.NET 项目重构到 Go 后的版本。
 使用 Go + `chromedp` (Chrome DevTools Protocol) 实现了全平台无头（Headless）网页截图和数据采集服务，专门搭配 **DDBOT** 使用，提供 B站、抖音、斗鱼、虎牙、A站、微博、推特(X) 等各大平台的动态/直播切图功能。
 
-## ✨ 核心特性与优化 (v1.8)
+## ✨ 核心特性与优化
 
 相较于原版的 C# CefSharp 实现，Go 语言版本进行了深度重构与诸多体验优化：
 
@@ -18,12 +18,16 @@
 **源码运行：**
 ```powershell
 cd "DD_SCREEN GO"
-go run .\cmd\dd-screen-go
+go run ./cmd/server/
 ```
 
 **编译发布版：**
 ```powershell
-go build -o "DDScreenGO v1.4.exe" cmd/dd-screen-go/main.go
+$env:CGO_ENABLED="0"; $env:GOOS="windows"; $env:GOARCH="amd64"
+go build -o "DDScreenGO_windows.exe" ./cmd/server/
+
+$env:CGO_ENABLED="0"; $env:GOOS="linux"; $env:GOARCH="amd64"
+go build -o "DDScreenGO_linux" ./cmd/server/
 ```
 
 启动后访问 API 测试与调试页：

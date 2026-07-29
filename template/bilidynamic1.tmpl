@@ -412,11 +412,17 @@
         {{end}}
 
         <!-- ================= 2.2 动态主文本 ================= -->
+        {{- $desc := $dynamic.desc -}}
+        {{- if not $desc -}}
+            {{- if $dynamic.major -}}{{- if $dynamic.major.opus -}}{{- if $dynamic.major.opus.summary -}}
+                {{- $desc = $dynamic.major.opus.summary -}}
+            {{- end -}}{{- end -}}{{- end -}}
+        {{- end -}}
 
         <div class="content">
-            {{- if $dynamic.desc -}}
-                {{- if $dynamic.desc.rich_text_nodes -}}
-                    {{- range $node := $dynamic.desc.rich_text_nodes -}}
+            {{- if $desc -}}
+                {{- if $desc.rich_text_nodes -}}
+                    {{- range $node := $desc.rich_text_nodes -}}
                         {{- if eq $node.type "RICH_TEXT_NODE_TYPE_TEXT" -}}
                             <span>{{$node.text}}</span>
                         {{- else if eq $node.type "RICH_TEXT_NODE_TYPE_AT" -}}
@@ -438,7 +444,7 @@
                         {{- end -}}
                     {{- end -}}
                 {{- else -}}
-                    <span>{{$dynamic.desc.text}}</span>
+                    <span>{{$desc.text}}</span>
                 {{- end -}}
             {{- end -}}
         </div>
@@ -482,6 +488,24 @@
                     {{range $index, $pic := $dynamic.major.draw.items}}
                         {{if lt $index 9}}
                         <img src="{{$pic.src}}@400w_400h_1c.webp" />
+                        {{end}}
+                    {{end}}
+                </div>
+                {{end}}
+                {{end}}
+            {{else if $dynamic.major.opus}}
+                {{if $dynamic.major.opus.pics}}
+                {{if .Expand}}
+                <div class="image-grid expand-img">
+                    {{range $pic := $dynamic.major.opus.pics}}
+                        <img src="{{$pic.url}}" />
+                    {{end}}
+                </div>
+                {{else}}
+                <div class="image-grid {{if eq (len $dynamic.major.opus.pics) 1}}single-img{{end}}">
+                    {{range $index, $pic := $dynamic.major.opus.pics}}
+                        {{if lt $index 9}}
+                        <img src="{{$pic.url}}@400w_400h_1c.webp" />
                         {{end}}
                     {{end}}
                 </div>
@@ -561,6 +585,12 @@
                 {{end}}
                 
                 <!-- 原动态文本 -->
+                {{- $oDesc := $oDynamic.desc -}}
+                {{- if not $oDesc -}}
+                    {{- if $oDynamic.major -}}{{- if $oDynamic.major.opus -}}{{- if $oDynamic.major.opus.summary -}}
+                        {{- $oDesc = $oDynamic.major.opus.summary -}}
+                    {{- end -}}{{- end -}}{{- end -}}
+                {{- end -}}
                 <div class="content">
                     {{- if $oDynamic.topic -}}
                         {{- if $oDynamic.topic.name -}}
@@ -570,9 +600,9 @@
                         </span>
                         {{- end -}}
                     {{- end -}}
-                    {{- if $oDynamic.desc -}}
-                        {{- if $oDynamic.desc.rich_text_nodes -}}
-                            {{- range $node := $oDynamic.desc.rich_text_nodes -}}
+                    {{- if $oDesc -}}
+                        {{- if $oDesc.rich_text_nodes -}}
+                            {{- range $node := $oDesc.rich_text_nodes -}}
                                 {{- if eq $node.type "RICH_TEXT_NODE_TYPE_TEXT" -}}
                                     <span>{{$node.text}}</span>
                                 {{- else if eq $node.type "RICH_TEXT_NODE_TYPE_AT" -}}
@@ -594,7 +624,7 @@
                                 {{- end -}}
                             {{- end -}}
                         {{- else -}}
-                            <span>{{$oDynamic.desc.text}}</span>
+                            <span>{{$oDesc.text}}</span>
                         {{- end -}}
                     {{- end -}}
                 </div>
@@ -614,6 +644,24 @@
                             {{range $index, $pic := $oDynamic.major.draw.items}}
                                 {{if lt $index 9}}
                                 <img src="{{$pic.src}}@400w_400h_1c.webp" />
+                                {{end}}
+                            {{end}}
+                        </div>
+                        {{end}}
+                        {{end}}
+                    {{else if $oDynamic.major.opus}}
+                        {{if $oDynamic.major.opus.pics}}
+                        {{if $.Expand}}
+                        <div class="image-grid expand-img">
+                            {{range $pic := $oDynamic.major.opus.pics}}
+                                <img src="{{$pic.url}}" />
+                            {{end}}
+                        </div>
+                        {{else}}
+                        <div class="image-grid {{if eq (len $oDynamic.major.opus.pics) 1}}single-img{{end}}">
+                            {{range $index, $pic := $oDynamic.major.opus.pics}}
+                                {{if lt $index 9}}
+                                <img src="{{$pic.url}}@400w_400h_1c.webp" />
                                 {{end}}
                             {{end}}
                         </div>
