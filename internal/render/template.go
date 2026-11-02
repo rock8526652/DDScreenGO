@@ -5,12 +5,12 @@ import (
 	"dd_screen_go/internal/platform"
 	"dd_screen_go/internal/util"
 	"fmt"
-	"text/template"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
 	templates "dd_screen_go/template"
@@ -55,20 +55,20 @@ type BiliDynamicSimple struct {
 	FanCardColor string
 	FanCardBg    string
 
-	Topic        string
-	Title        string
-	Text         string
-	RichText     []BiliRichTextNode
+	Topic    string
+	Title    string
+	Text     string
+	RichText []BiliRichTextNode
 
-	Images       []string
+	Images []string
 
-	HasVote      bool
-	VoteDesc     string
-	VoteJoinNum  int
-	VoteOptions  []BiliVoteOption
+	HasVote     bool
+	VoteDesc    string
+	VoteJoinNum int
+	VoteOptions []BiliVoteOption
 
-	IsForward    bool
-	Forward      *BiliDynamicSimple
+	IsForward bool
+	Forward   *BiliDynamicSimple
 }
 
 type DynamicTemplateData struct {
@@ -82,6 +82,20 @@ type DynamicTemplateData struct {
 	Expand      bool
 	AtCard      bool
 	LinkQr      bool
+}
+
+// templateFuncs provides helper functions available in all .tmpl templates.
+var templateFuncs = template.FuncMap{
+	// contains reports whether substr is within s.
+	"contains": func(s, substr string) bool {
+		return strings.Contains(s, substr)
+	},
+	// split splits s on sep and returns the resulting slice.
+	"split": func(s, sep string) []string {
+		return strings.Split(s, sep)
+	},
+	// trimSpace trims leading and trailing whitespace.
+	"trimSpace": strings.TrimSpace,
 }
 
 type TemplateManager struct {
@@ -134,11 +148,11 @@ func (tm *TemplateManager) LoadTemplates() {
 
 		name := f.Name()
 		nameLower := strings.ToLower(strings.TrimSuffix(name, filepath.Ext(name)))
-		
+
 		filepathStr := filepath.Join(dir, f.Name())
-		
+
 		// Just parse once to check for syntax errors during startup, but we don't store it.
-		_, err := template.ParseFiles(filepathStr)
+		_, err := template.New(name).Funcs(templateFuncs).ParseFiles(filepathStr)
 		if err != nil {
 			util.Log("ERR", "Template", "Failed to parse template %s: %v", f.Name(), err)
 			continue
@@ -182,13 +196,13 @@ func (tm *TemplateManager) RenderLiveVariant(platform string, v int, data LiveTe
 			return "", fmt.Errorf("live template variant %d for platform %s not found", v, platform)
 		}
 	}
-	
+
 	// Parse on every render for hot-reloading
-	t, err := template.ParseFiles(fp)
+	t, err := template.New(filepath.Base(fp)).Funcs(templateFuncs).ParseFiles(fp)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template file %s: %v", fp, err)
 	}
-	
+
 	data.GeneratedAt = time.Now().Format("2006-01-02 15:04:05")
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, data); err != nil {
@@ -215,12 +229,12 @@ func (tm *TemplateManager) RenderDynamicVariant(platform string, v int, data Dyn
 			return "", fmt.Errorf("dynamic template variant %d for platform %s not found", v, platform)
 		}
 	}
-	
-	t, err := template.ParseFiles(fp)
+
+	t, err := template.New(filepath.Base(fp)).Funcs(templateFuncs).ParseFiles(fp)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template file %s: %v", fp, err)
 	}
-	
+
 	data.GeneratedAt = time.Now().Format("2006-01-02 15:04:05")
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, data); err != nil {

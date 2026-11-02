@@ -2149,14 +2149,13 @@ func fetchAndParseOpus(id string, res *BiliDynamicSimple) {
 		return
 	}
 	htmlStr := string(body)
-	re := regexp.MustCompile(`window\.__INITIAL_STATE__\s*=\s*(\{.*?\});`)
-	matches := re.FindStringSubmatch(htmlStr)
-	if len(matches) < 2 {
+	jsonStr := extractInitialStateJSON(htmlStr)
+	if jsonStr == "" {
 		return
 	}
 
 	var data map[string]any
-	if err := json.Unmarshal([]byte(matches[1]), &data); err != nil {
+	if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
 		return
 	}
 
@@ -2211,6 +2210,17 @@ func fetchAndParseOpus(id string, res *BiliDynamicSimple) {
 				for _, p := range paragraphs {
 					para := util.M(p)
 					if para == nil {
+						continue
+					}
+					// para_type == 2 为图片段落
+					if pt, ok := para["para_type"].(float64); ok && int(pt) == 2 {
+						if picMap := util.M(para["pic"]); picMap != nil {
+							for _, picItem := range util.A(picMap["pics"]) {
+								if u := util.S(util.M(picItem)["url"]); u != "" {
+									res.Images = append(res.Images, u)
+								}
+							}
+						}
 						continue
 					}
 					// Text nodes
@@ -2441,6 +2451,38 @@ func parseBiliDynamicItem(item map[string]any) *BiliDynamicSimple {
 					}
 				}
 			}
+			// 新版 opus 动态：正文在 major.opus.summary，图片在 major.opus.pics
+			if opus := util.M(major["opus"]); opus != nil {
+				if res.Title == "" {
+					res.Title = util.S(opus["title"])
+				}
+				if res.Text == "" {
+					if summary := util.M(opus["summary"]); summary != nil {
+						res.Text = util.S(summary["text"])
+						for _, n := range util.A(summary["rich_text_nodes"]) {
+							nodeMap := util.M(n)
+							if nodeMap == nil {
+								continue
+							}
+							nodeType := util.S(nodeMap["type"])
+							if nodeType == "" {
+								nodeType = "RICH_TEXT_NODE_TYPE_TEXT"
+							}
+							res.RichText = append(res.RichText, BiliRichTextNode{
+								Type:    nodeType,
+								Text:    util.S(nodeMap["text"]),
+								JumpURL: util.S(nodeMap["jump_url"]),
+								Rid:     util.S(nodeMap["rid"]),
+							})
+						}
+					}
+				}
+				for _, p := range util.A(opus["pics"]) {
+					if u := util.S(util.M(p)["url"]); u != "" {
+						res.Images = append(res.Images, u)
+					}
+				}
+			}
 		}
 
 		// Vote
@@ -2476,8 +2518,120 @@ func parseBiliDynamicItem(item map[string]any) *BiliDynamicSimple {
 }
 
 // fetchOpusTitleAndDesc fetches the opus page HTML and extracts title + text content
+// descHasContent checks whether a module_dynamic.desc map contains meaningful text content.
+func descHasContent(v any) bool {
+	d, ok := v.(map[string]any)
+	if !ok || d == nil {
+		return false
+	}
+	if t := util.S(d["text"]); t != "" {
+		return true
+	}
+	if nodes := util.A(d["rich_text_nodes"]); len(nodes) > 0 {
+		return true
+	}
+	return false
+}
+
+// injectOpusFallback 将 opus 页面的标题、正文、图片写入 module_dynamic，
+// 模板优先读取 major.opus，因此这里注入 opus 结构而不是伪造 article。
+func injectOpusFallback(md map[string]any, title string, desc map[string]any, pics []string) {
+	if md == nil {
+		return
+	}
+	if desc != nil {
+		md["desc"] = desc
+	}
+
+	major, ok := md["major"].(map[string]any)
+	if !ok || major == nil {
+		major = map[string]any{}
+		md["major"] = major
+	}
+	opus, ok := major["opus"].(map[string]any)
+	if !ok || opus == nil {
+		opus = map[string]any{}
+		major["opus"] = opus
+		if util.S(major["type"]) == "" {
+			major["type"] = "MAJOR_TYPE_OPUS"
+		}
+	}
+
+	if title != "" {
+		opus["title"] = title
+		// 模板中 article 分支优先于 opus，若 article 已存在但无标题则一并补上
+		if article, ok := major["article"].(map[string]any); ok && article != nil {
+			if util.S(article["title"]) == "" {
+				article["title"] = title
+			}
+		}
+	}
+	if desc != nil && opus["summary"] == nil {
+		opus["summary"] = desc
+	}
+	if len(pics) > 0 {
+		if existing := util.A(opus["pics"]); len(existing) == 0 {
+			picMaps := make([]map[string]any, 0, len(pics))
+			for _, u := range pics {
+				picMaps = append(picMaps, map[string]any{"url": u})
+			}
+			opus["pics"] = picMaps
+		}
+	}
+}
+
+// extractInitialStateJSON extracts the JSON object assigned to window.__INITIAL_STATE__
+// from HTML source. Uses brace counting instead of regex to correctly handle nested JSON.
+func extractInitialStateJSON(html string) string {
+	marker := "window.__INITIAL_STATE__"
+	idx := strings.Index(html, marker)
+	if idx < 0 {
+		return ""
+	}
+	rest := html[idx+len(marker):]
+	// Skip optional whitespace and '='
+	rest = strings.TrimLeft(rest, " \t\r\n")
+	if !strings.HasPrefix(rest, "=") {
+		return ""
+	}
+	rest = strings.TrimLeft(rest[1:], " \t\r\n")
+	if !strings.HasPrefix(rest, "{") {
+		return ""
+	}
+	depth := 0
+	inStr := false
+	escape := false
+	for i := 0; i < len(rest); i++ {
+		c := rest[i]
+		if escape {
+			escape = false
+			continue
+		}
+		if c == '\\' && inStr {
+			escape = true
+			continue
+		}
+		if c == '"' {
+			inStr = !inStr
+			continue
+		}
+		if inStr {
+			continue
+		}
+		if c == '{' {
+			depth++
+		} else if c == '}' {
+			depth--
+			if depth == 0 {
+				return rest[:i+1]
+			}
+		}
+	}
+	return ""
+}
+
 // from __INITIAL_STATE__. Used as fallback when dynamic API returns desc=null for opus dynamics.
-func fetchOpusTitleAndDesc(id string) (title string, desc map[string]any) {
+func fetchOpusTitleAndDesc(id string) (title string, desc map[string]any, pics []string) {
 	req, err := http.NewRequest("GET", "https://www.bilibili.com/opus/"+id, nil)
 	if err != nil {
 		return
@@ -2492,13 +2646,12 @@ func fetchOpusTitleAndDesc(id string) (title string, desc map[string]any) {
 	if err != nil {
 		return
 	}
-	re := regexp.MustCompile(`window\.__INITIAL_STATE__\s*=\s*(\{.*?\});`)
-	matches := re.FindStringSubmatch(string(body))
-	if len(matches) < 2 {
+	jsonStr := extractInitialStateJSON(string(body))
+	if jsonStr == "" {
 		return
 	}
 	var data map[string]any
-	if err := json.Unmarshal([]byte(matches[1]), &data); err != nil {
+	if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
 		return
 	}
 	detail := util.M(data["detail"])
@@ -2527,6 +2680,15 @@ func fetchOpusTitleAndDesc(id string) (title string, desc map[string]any) {
 			for _, p := range paragraphs {
 				para := util.M(p)
 				if para == nil {
+					continue
+				}
+				// para_type == 2 为图片段落
+				if pt, ok := para["para_type"].(float64); ok && int(pt) == 2 {
+					for _, picItem := range util.A(util.M(para["pic"])["pics"]) {
+						if u := util.S(util.M(picItem)["url"]); u != "" {
+							pics = append(pics, u)
+						}
+					}
 					continue
 				}
 				textMap := util.M(para["text"])
@@ -2632,29 +2794,17 @@ func (r *Renderer) SaveBiliDynamic1(ctx context.Context, rawURL string, expand b
 	if d, ok := rawData["data"].(map[string]any); ok {
 		if item, ok := d["item"].(map[string]any); ok {
 			if modules, ok := item["modules"].(map[string]any); ok {
-				if md, ok := modules["module_dynamic"].(map[string]any); ok {
-					if md["desc"] == nil {
-						util.Log("DBG", "Dynamic1", "desc为空，尝试从opus页面获取标题和文本")
-						title, desc := fetchOpusTitleAndDesc(id)
-						if title != "" || desc != nil {
-							util.Log("DBG", "Dynamic1", "opus回退成功: title=%q, hasDesc=%v", title, desc != nil)
-							if desc != nil {
-								md["desc"] = desc
-							}
-							if title != "" {
-								// Inject title into module_dynamic.major as article-like structure
-								if major, ok := md["major"].(map[string]any); ok {
-									if major["article"] == nil {
-										major["article"] = map[string]any{"title": title}
-									}
-								} else {
-									md["major"] = map[string]any{
-										"type":    "MAJOR_TYPE_ARTICLE",
-										"article": map[string]any{"title": title},
-									}
-								}
-							}
-						}
+				md, _ := modules["module_dynamic"].(map[string]any)
+				if md == nil {
+					md = map[string]any{}
+					modules["module_dynamic"] = md
+				}
+				if !descHasContent(md["desc"]) {
+					util.Log("DBG", "Dynamic1", "desc为空，尝试从opus页面获取标题、文本和图片")
+					title, desc, pics := fetchOpusTitleAndDesc(id)
+					if title != "" || desc != nil || len(pics) > 0 {
+						util.Log("DBG", "Dynamic1", "opus回退成功: title=%q, hasDesc=%v, pics=%d", title, desc != nil, len(pics))
+						injectOpusFallback(md, title, desc, pics)
 					}
 				}
 			}
@@ -2671,28 +2821,17 @@ func (r *Renderer) SaveBiliDynamic1(ctx context.Context, rawURL string, expand b
 					origID = util.S(orig["id"])
 				}
 				if origModules, ok := orig["modules"].(map[string]any); ok {
-					if origMd, ok := origModules["module_dynamic"].(map[string]any); ok {
-						if origMd["desc"] == nil && origID != "" {
-							util.Log("DBG", "Dynamic1", "转发原动态desc为空，尝试从opus页面获取 (orig_id=%s)", origID)
-							origTitle, origDesc := fetchOpusTitleAndDesc(origID)
-							if origTitle != "" || origDesc != nil {
-								util.Log("DBG", "Dynamic1", "转发原动态opus回退成功: title=%q, hasDesc=%v", origTitle, origDesc != nil)
-								if origDesc != nil {
-									origMd["desc"] = origDesc
-								}
-								if origTitle != "" {
-									if major, ok := origMd["major"].(map[string]any); ok {
-										if major["article"] == nil {
-											major["article"] = map[string]any{"title": origTitle}
-										}
-									} else {
-										origMd["major"] = map[string]any{
-											"type":    "MAJOR_TYPE_ARTICLE",
-											"article": map[string]any{"title": origTitle},
-										}
-									}
-								}
-							}
+					origMd, _ := origModules["module_dynamic"].(map[string]any)
+					if origMd == nil {
+						origMd = map[string]any{}
+						origModules["module_dynamic"] = origMd
+					}
+					if !descHasContent(origMd["desc"]) && origID != "" {
+						util.Log("DBG", "Dynamic1", "转发原动态desc为空，尝试从opus页面获取 (orig_id=%s)", origID)
+						origTitle, origDesc, origPics := fetchOpusTitleAndDesc(origID)
+						if origTitle != "" || origDesc != nil || len(origPics) > 0 {
+							util.Log("DBG", "Dynamic1", "转发原动态opus回退成功: title=%q, hasDesc=%v, pics=%d", origTitle, origDesc != nil, len(origPics))
+							injectOpusFallback(origMd, origTitle, origDesc, origPics)
 						}
 					}
 				}
