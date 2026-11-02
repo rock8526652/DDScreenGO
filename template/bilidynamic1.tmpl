@@ -395,7 +395,9 @@
         {{$dynamic := $item.modules.module_dynamic}}
         {{if $dynamic.major}}
             {{if $dynamic.major.article}}
-                <div class="title">{{$dynamic.major.article.title}}</div>
+                {{if $dynamic.major.article.title}}<div class="title">{{$dynamic.major.article.title}}</div>{{end}}
+            {{else if $dynamic.major.opus}}
+                {{if $dynamic.major.opus.title}}<div class="title">{{$dynamic.major.opus.title}}</div>{{end}}
             {{end}}
         {{end}}
 
@@ -580,7 +582,9 @@
                             </div>
                         </a>
                     {{else if $oDynamic.major.article}}
-                        <div class="title" style="font-size:18px;">{{$oDynamic.major.article.title}}</div>
+                        {{if $oDynamic.major.article.title}}<div class="title" style="font-size:18px;">{{$oDynamic.major.article.title}}</div>{{end}}
+                    {{else if $oDynamic.major.opus}}
+                        {{if $oDynamic.major.opus.title}}<div class="title" style="font-size:18px;">{{$oDynamic.major.opus.title}}</div>{{end}}
                     {{end}}
                 {{end}}
                 
